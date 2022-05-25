@@ -9,7 +9,6 @@ partial interface HTMLAnchorElement {
     [CEReactions] attribute USVString attributionReportTo;
     [CEReactions] attribute long long attributionExpiry;
     [CEReactions] attribute long long attributionSourcePriority;
-    [CEReactions] attribute boolean registerAttributionSource;
 };
 
 dictionary AttributionSourceParams {
@@ -18,14 +17,4 @@ dictionary AttributionSourceParams {
   USVString attributionReportTo;
   long long attributionExpiry;
   long long attributionSourcePriority;
-};
-
-[Exposed=Window, SecureContext]
-interface AttributionReporting {
-  Promise<undefined> registerAttributionSource(AttributionSourceParams params);
-};
-
-[SecureContext]
-partial interface Window {
-  readonly attribute AttributionReporting attributionReporting;
 };
