@@ -59,12 +59,14 @@ const actions = [
   }
 ];
 
- function initialize(el, t) {
+function waitForRender() {
+  return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+}
+
+function initialize(el) {
   el.setRangeText("foobar", 0, el.value.length, "start");
   // Make sure to flush async dispatches
-  return new Promise(resolve => {
-    t.step_timeout(resolve, 200);
-  });
+  return waitForRender();
 }
 
 els.forEach((el) => {
@@ -74,7 +76,7 @@ els.forEach((el) => {
     // promise_test instead of async_test is important because these need to happen in sequence (to test that events
     // fire if and only if the selection changes).
     promise_test(async t => {
-      await initialize(el, t);
+      await initialize(el);
 
       const watcher = new EventWatcher(t, el, "select");
 
@@ -94,16 +96,15 @@ els.forEach((el) => {
 
       action.action(el);
 
-      return new Promise(resolve => {
-        t.step_timeout(() => {
-          el.onselect = null;
-          resolve();
-        }, 200);
-      });
+      el.onselect = null;
+      return waitForRender();
     }, `${elLabel}: ${action.label} a second time (must not fire select)`);
 
     promise_test(async t => {
       const element = el.cloneNode(true);
+      const selectionStartBefore = element.selectionStart;
+      const selectionEndBefore = element.selectionEnd;
+      const selectionDirectionBefore = element.selectionDirection;
 
       element.onselect = e => {
         element.onselect = null;
@@ -111,26 +112,49 @@ els.forEach((el) => {
 
       action.action(element);
 
-      // step_wait properly timeouts before the whole test collapses
-      await t.step_wait(() => !element.onselect, "event didn't fire", 200, 10);
+      await waitForRender();
+      if (
+        selectionStartBefore === element.selectionStart
+        && selectionEndBefore === element.selectionEnd
+        && selectionDirectionBefore === element.selectionDirection
+      ) {
+        assert_true(element.onselect !== null, "event shouldn't fire since no modification to selection");
+      } else {
+        assert_true(element.onselect === null, "event didn't fire but selection changed");
+      }
+
     }, `${elLabel}: ${action.label} disconnected node`);
 
     // Intentionally still using promise_test, as assert_unreachable does not
     // make the test fail inside a listener while t.unreached_func() does.
+
+    // This test makes sure that if change to selection, event in event queue fires
     promise_test(async t => {
       const element = el.cloneNode(true);
+      const selectionStartBefore = element.selectionStart;
+      const selectionEndBefore = element.selectionEnd;
+      const selectionDirectionBefore = element.selectionDirection;
       let fired = false;
 
       element.onselect = () => fired = true;
-      action.action(element);
-      assert_false(fired, "the select event must not fire synchronously")
 
-      await t.step_wait(() => fired, "event didn't fire", 200, 10);
+      action.action(element);
+
+      assert_false(fired, "the select event must not fire synchronously");
+      await waitForRender();
+      if (
+        selectionStartBefore === element.selectionStart
+        && selectionEndBefore === element.selectionEnd
+        && selectionDirectionBefore === element.selectionDirection
+      ) {
+        assert_false(fired, "event shouldn't fire since no modification to selection");
+      } else {
+        assert_true(fired, "event didn't fire but selection changed");
+      }
     }, `${elLabel}: ${action.label} event queue`);
 
     promise_test(t => {
       const element = el.cloneNode(true);
-      assert_equals(element.selectionEnd, 0);
 
       element.onselect = () => {
         element.onselect = t.unreached_func("the select event must not fire twice");
@@ -139,9 +163,7 @@ els.forEach((el) => {
       action.action(element);
       action.action(element);
 
-      return new Promise(resolve => {
-        t.step_timeout(resolve, 200);
-      });
+      return waitForRender();
     }, `${elLabel}: ${action.label} twice in disconnected node (must fire select only once)`);
   });
 });
